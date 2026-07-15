@@ -1,3 +1,3 @@
 Jhon Jairo Romero
-Jackson Cordero Aponte -> el famosisimo 
+Jackson Cordero Aponte 
 William Fernando Blanco
