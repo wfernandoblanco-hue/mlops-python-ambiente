@@ -1,0 +1,21 @@
+data:
+  n_samples: 2500
+  random_state: 12345
+  noise_std: 4.5
+  raw_path: Data/raw/data_trabajo.csv
+  processed_train_path: Data/processed/train.csv
+  processed_test_path: Data/processed/test.csv
+
+split:
+  test_size: 0.2
+  random_state: 12345
+
+model:
+  type: random_forest
+  random_state: 12345
+  n_estimators: 120
+  max_depth: 8
+
+mlflow:
+  tracking_uri: sqlite:///mlflow.db
+  experiment_name: session_minutes_regression
