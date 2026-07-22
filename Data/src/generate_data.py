@@ -5,58 +5,79 @@ import pandas as pd
 
 from config import ensure_parent, load_params
 
-
 SEGMENTS = ["new", "active", "at_risk", "churn"]
 DEVICE_OS = ["android", "ios", "web"]
 SITES = ["home", "search", "product", "content"]
-ENTRY_POINTS = ["home", "search", "recommendation", "notification"]
+CAMPAIGN_TYPES = ["promotional", "transactional", "reengagement", "newsletter"]
 
 
-def build_mock_sessions(n_samples: int, random_state: int, noise_std: float) -> pd.DataFrame:
-    """Generate a reproducible mock dataset for session duration regression."""
+def build_mock_push_notifications(
+    n_samples: int, random_state: int, noise_std: float
+) -> pd.DataFrame:
+    """Generate a reproducible mock dataset for push notification open classification."""
     rng = np.random.default_rng(random_state)
 
+    # 1. Creación de variables especificadas
     data = pd.DataFrame(
         {
-            "segment": rng.choice(SEGMENTS, size=n_samples, p=[0.25, 0.45, 0.2, 0.1]),
-            "historical_avg_session_minutes": rng.uniform(2.0, 35.0, size=n_samples),
-            "historical_sessions_last_7d": rng.poisson(4, size=n_samples),
-            "days_since_last_session": rng.integers(0, 31, size=n_samples),
+            "user_id": [f"usr_{i:06d}" for i in range(1, n_samples + 1)],
+            "site": rng.choice(SITES, size=n_samples),
+            "campaign_type": rng.choice(
+                CAMPAIGN_TYPES, size=n_samples, p=[0.40, 0.25, 0.20, 0.15]
+            ),
+            "device_os": rng.choice(
+                DEVICE_OS, size=n_samples, p=[0.45, 0.35, 0.20]
+            ),
             "hour_of_day": rng.integers(0, 24, size=n_samples),
             "day_of_week": rng.integers(0, 7, size=n_samples),
-            "device_os": rng.choice(DEVICE_OS, size=n_samples, p=[0.45, 0.35, 0.2]),
-            "site": rng.choice(SITES, size=n_samples),
-            "entry_point": rng.choice(ENTRY_POINTS, size=n_samples),
-            "push_received_last_24h": rng.integers(0, 2, size=n_samples),
+            # Distribución Beta para simular tasas de apertura reales (sesgadas hacia valores bajos)
+            "historical_open_rate": rng.beta(a=2, b=8, size=n_samples).round(4),
+            "historical_push_count": rng.integers(1, 100, size=n_samples),
+            "days_since_last_open": rng.integers(0, 61, size=n_samples),
+            "segment": rng.choice(
+                SEGMENTS, size=n_samples, p=[0.25, 0.45, 0.20, 0.10]
+            ),
         }
     )
 
+    # 2. Mapeo de efectos categóricos sobre el Log-Odds (Logit)
+    campaign_effect = data["campaign_type"].map(
+        {
+            "transactional": 1.2,
+            "reengagement": 0.3,
+            "promotional": 0.0,
+            "newsletter": -0.3,
+        }
+    )
     segment_effect = data["segment"].map(
-        {"new": -2.5, "active": 4.0, "at_risk": -4.0, "churn": -7.5}
+        {"active": 0.5, "new": 0.0, "at_risk": -0.5, "churn": -1.2}
     )
-    entry_effect = data["entry_point"].map(
-        {"home": 1.5, "search": 2.0, "recommendation": 5.5, "notification": 3.0}
+    peak_hour_effect = np.where(
+        data["hour_of_day"].between(10, 14)
+        | data["hour_of_day"].between(18, 21),
+        0.4,
+        0.0,
     )
-    site_effect = data["site"].map({"home": 1.0, "search": 1.5, "product": 2.5, "content": 3.0})
-    evening_effect = np.where(data["hour_of_day"].between(18, 22), 3.0, 0.0)
-    weekend_effect = np.where(data["day_of_week"].isin([5, 6]), 2.0, 0.0)
+
     noise = rng.normal(0.0, noise_std, size=n_samples)
 
-    session_minutes = (
-        6.0
-        + 0.58 * data["historical_avg_session_minutes"]
-        + 0.85 * data["historical_sessions_last_7d"]
-        - 0.18 * data["days_since_last_session"]
-        + 2.7 * data["push_received_last_24h"]
+    # 3. Cálculo de los Log-Odds (z)
+    log_odds = (
+        -1.8  # Sesgo base (tasa de conversión ~15-20%)
+        + 3.5 * data["historical_open_rate"]
+        - 0.03 * data["days_since_last_open"]
+        + campaign_effect
         + segment_effect
-        + entry_effect
-        + site_effect
-        + evening_effect
-        + weekend_effect
+        + peak_hour_effect
         + noise
     )
 
-    data["session_minutes"] = np.clip(session_minutes, 1.0, None).round(2)
+    # 4. Transformación Sigmoide a probabilidades [0, 1]
+    probabilities = 1 / (1 + np.exp(-log_odds))
+
+    # 5. Generación del target binario (0 o 1) mediante ensayo de Bernoulli
+    data["target_opened"] = rng.binomial(n=1, p=probabilities)
+
     return data
 
 
@@ -68,7 +89,7 @@ def main() -> None:
     params = load_params(args.params)
     data_params = params["data"]
 
-    data = build_mock_sessions(
+    data = build_mock_push_notifications(
         n_samples=int(data_params["n_samples"]),
         random_state=int(data_params["random_state"]),
         noise_std=float(data_params["noise_std"]),

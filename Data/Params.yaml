@@ -2,9 +2,9 @@ data:
   n_samples: 2500
   random_state: 12345
   noise_std: 4.5
-  raw_path: Data/raw/data_trabajo.csv
-  processed_train_path: Data/processed/train.csv
-  processed_test_path: Data/processed/test.csv
+  raw_path: data/raw/data_trabajo.csv
+  processed_train_path: data/processed/train.csv
+  processed_test_path: data/processed/test.csv
 
 split:
   test_size: 0.2
